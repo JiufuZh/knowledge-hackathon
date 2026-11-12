@@ -1,0 +1,28 @@
+# Licensed inputs, local evidence and scorer output
+.private/
+hackathon-knowledge-kit-participant*/
+snapshots/
+snapshots_zip/
+harness/
+eval/
+starter/
+results/
+*.zip
+*.pdf
+*.sqlite*
+*.db
+per_question.jsonl
+manifest.json
+
+# Local credentials and development files
+.env
+.env.*
+*.pem
+*.key
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.idea/
+.vscode/
