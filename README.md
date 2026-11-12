@@ -2,6 +2,8 @@
 
 A credit union member asking about a rate needs the rate that applied to their product, balance and date. This offline Python system answers from dated website captures, shows the evidence and explains disagreements between sources.
 
+The unchanged organizer scorer measured **93.64% weighted accuracy** across 40 practice questions, with zero execution errors and a 0.21-second p95 answer time. [Results and limitations](RESULTS.md)
+
 ## Run the solution
 
 Use Python 3.11. The submission lives at the repository root. From that root, run the original synthetic tests:

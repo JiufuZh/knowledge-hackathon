@@ -27,3 +27,5 @@ The owner confirmed the design. Three agents built ingestion, resolution, and me
 | Independent acceptance tester | Initially passed 23 of 26 original scenarios. After fixes, all 26 passed. The three initial failures involved foreign institutions, new-member eligibility, and a link to the wrong product. |
 
 The [regression suite](tests) contains reproductions of the release defects. The [acceptance cases](VALIDATION.md) describe the broader behaviors these checks protect.
+
+After simplification, the dedicated code reviewer repeated all six original reproductions successfully. The final local checkpoint used the owner's selected simulation mode (`jev_called=false`, `probability=null`, `confidence=null`). Its release decision references the measured [clean-checkout results](RESULTS.md).

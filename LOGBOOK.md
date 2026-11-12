@@ -1,6 +1,6 @@
 # Project logbook
 
-**Verified slices:** 5/6. **Current:** S6 independent code review and code simplification. **Blockers:** release awaits rechecks on the final tree. **Next:** run the unchanged scorer from a clean checkout.
+**Verified slices:** 6/6. **Current:** release verified. **Blockers:** none. **Next:** the owner can give the organizer the repository URL and selected commit.
 
 | ID | Goal | Status | Verification and evidence |
 | --- | --- | --- | --- |
@@ -9,6 +9,6 @@
 | S3 | Build dated inventories and extract qualified evidence | 已完成 | Verified all 285,954 stored source spans against their captures. [Ingestion checks](tests/test_evidence.py) |
 | S4 | Resolve comparable claims and report conflicts | 已完成 | Mutations, crossing tiers, competing sources, fee conditions and promotion eligibility. [Resolution cases](tests/test_resolution.py) |
 | S5 | Answer, cite and abstain | 已完成 | Member-facing regressions, seven paraphrases of one tier lookup and contrasting requests. [Member cases](tests/test_answers.py) and [integration](tests/test_integration.py) |
-| S6 | Integrate, measure and publish a reproducible solution | 进行中 | Independent code review, independent QA and a dedicated simplification pass. [Release requirements](VALIDATION.md) |
+| S6 | Integrate, measure and publish a reproducible solution | 已完成 | Clean checkout, 54 tests, 26 independent cases, 93.64% weighted accuracy and all dedicated review rechecks passed. [Evidence](RESULTS.md) |
 
 **2026-11-11.** The owner approved the reviewed framework. Three agents implemented the slices. Public accuracy progressed from 9.30% (starter) to 82.40%, 92.09% and 93.64%. A conflict audit found a promotional-tier collision and a fee-footnote false change. Independent code review and QA exposed attribution, historical timeline and eligibility errors. Fixes have reproducible cases.
