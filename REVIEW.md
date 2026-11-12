@@ -15,3 +15,15 @@ All three requested changes in round one and returned **proceed** after reading 
 The project owner selected a local agent simulation for the Jev checkpoint. Codex compared the review findings with the revised agreement and fixtures. The outcome was **ready for owner confirmation**. Each original blocker has a written rule, a test case and a reviewer recheck. Outstanding empirical questions include extraction coverage, conflict quality and generalization beyond the public set.
 
 `mode=agent_simulation`, `model=Codex (GPT-6)`, `jev_called=false`, `probability=null`, `confidence=null`, `needs_review=true` (owner confirmation before implementation).
+
+## Implementation review
+
+The owner confirmed the design. Three agents built ingestion, resolution, and member answers. Two additional agents performed the required code review and simplification.
+
+| Role | Outcome |
+| --- | --- |
+| Dedicated code reviewer | Reproduced six defects through the organizer's entry point. Fixes covered routing-number ownership and conflict citations, branch-specific closure dates, foreign-institution rates, product-specific links, future-dated publications, and a timeline that reversed direction. The reviewer reran the original cases. |
+| Dedicated code simplifier | Refactored four modules for member answers, branch schedules and passage retrieval. Removed redundant lookup structures and clarified rankings and fallback selection. An A/B run compared all fields of all 40 public answers. Text, confidence, notes and citations matched exactly. |
+| Independent acceptance tester | Initially passed 23 of 26 original scenarios. After fixes, all 26 passed. The three initial failures involved foreign institutions, new-member eligibility, and a link to the wrong product. |
+
+The [regression suite](tests) contains reproductions of the release defects. The [acceptance cases](VALIDATION.md) describe the broader behaviors these checks protect.

@@ -1,0 +1,2 @@
+# The solution uses the Python 3.11 standard library.
+# The organizer's runner provides its own contract module.

@@ -1,4 +1,4 @@
-# Proposed solution
+# System design
 
 The system answers credit union members from the captures available on a requested date. A reviewer can run it offline with the original kit on Python 3.11. The public repository holds original code, synthetic tests and aggregate measurements.
 
@@ -11,7 +11,7 @@ The system answers credit union members from the captures available on a request
 | S5 | Answer agent | `knowledge/query.py` parses member intent and renders supported answers, lists and refusals. |
 | S6 | Integrator | Root `solution.py` exports `build()`; the returned object implements `ingest(snapshot)`, `answer(question, as_of=None)` and `conflicts()`. Use the grader's `contract` types at this boundary. |
 
-The [implementation agreement](INTERFACES.md) defines the handoffs. Freeze one importable version of those shared types as the first implementation step. Each agent owns its module and synthetic tests. The integrator owns the adapter, combined tests and final measurements.
+The [implementation agreement](INTERFACES.md) defines the handoffs. The three modules use [shared evidence records](knowledge/schema.py). The integrator owns the adapter, combined tests and final measurements. Independent code review and code simplification are separate release checks, each followed by regression testing.
 
 ## Ingestion and time
 
