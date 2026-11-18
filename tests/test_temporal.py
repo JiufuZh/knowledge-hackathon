@@ -34,6 +34,12 @@ class TemporalTests(unittest.TestCase):
     def ask(self, question, cutoff=None):
         return answer_dated(self.history, question, cutoff, read_fixture)
 
+    def restore_january_rate_in_march(self):
+        jan = self.history.views[0]
+        proof = replace(jan.claims[0].evidence, snapshot_id="mar", taken_on="2025-03-03")
+        self.history.views += (replace(jan, taken_on=proof.taken_on, snapshot_id="mar",
+                                       claims=(replace(jan.claims[0], evidence=proof),)),)
+
     def test_corrected_and_posted_values_have_distinct_sources(self):
         for question, cutoff, expected, source in (
             ("What was posted January 1, 2025?", "2025-02-01", "4%", "jan"),
@@ -52,10 +58,7 @@ class TemporalTests(unittest.TestCase):
         self.assertEqual([s.snapshot_id for s in answer.sources], ["jan", "feb"])
 
     def test_timeline_keeps_a_change_that_reverses(self):
-        jan = self.history.views[0]
-        proof = replace(jan.claims[0].evidence, snapshot_id="mar", taken_on="2025-03-01")
-        self.history.views += (replace(jan, taken_on=proof.taken_on, snapshot_id="mar",
-                                       claims=(replace(jan.claims[0], evidence=proof),)),)
+        self.restore_january_rate_in_march()
         answer = self.ask("Show the timeline of the savings rate.")
         self.assertEqual([s.snapshot_id for s in answer.sources], ["jan", "feb", "mar"])
         self.assertIn("5%", answer.text)
@@ -87,3 +90,62 @@ class TemporalTests(unittest.TestCase):
                               None, capture_question)
         self.assertIn("2022", answer.text)
         self.assertNotIn("2025", answer.text)
+
+    def test_previous_and_first_capture_comparisons_respect_cutoff(self):
+        self.restore_january_rate_in_march()
+        for question, cutoff, snapshots in (
+            ("How did the APY change since the previous capture?", None, ["feb", "mar"]),
+            ("Compare the APYs between the prior and latest snapshots.", None, ["feb", "mar"]),
+            ("What was the APY between the first and last captures?", None, ["jan", "mar"]),
+            ("Has the APY changed?", None, ["jan", "mar"]),
+            ("How did the APY change since the previous capture?", "2025-03-02", ["jan", "feb"]),
+        ):
+            with self.subTest(question=question, cutoff=cutoff):
+                reply = self.ask(question, cutoff)
+                self.assertTrue(reply.confident)
+                self.assertEqual([s.snapshot_id for s in reply.sources], snapshots)
+        self.assertFalse(self.ask("Compare the last two snapshots.", "2025-01-31").confident)
+
+    def test_procedural_change_request_is_a_single_lookup(self):
+        self.assertEqual(self.ask("How do I change my mailing address?").text, "5%")
+
+    def test_before_is_exclusive_and_on_or_before_inclusive(self):
+        self.restore_january_rate_in_march()
+        for phrase, expected in (("immediately before March 3, 2025", "feb"),
+                                 ("before 2025-03-03", "feb"),
+                                 ("before March 2025", "feb"),
+                                 ("on or before March 3, 2025", "mar")):
+            with self.subTest(phrase=phrase):
+                self.assertEqual(self.ask("What was the APY " + phrase + "?").sources[0].snapshot_id, expected)
+        self.assertFalse(self.ask("What was the APY before January 1, 2025?").confident)
+
+    def test_month_uses_the_evidence_available_within_it(self):
+        self.restore_january_rate_in_march()
+        reply = self.ask("How did APY change from January to March 2025?")
+        self.assertTrue(reply.confident)
+        self.assertIn("2025-03-03", reply.text)
+        self.assertEqual([s.snapshot_id for s in reply.sources], ["jan", "mar"])
+        cutoff = self.ask("What was the APY in March 2025?", "2025-03-02")
+        self.assertTrue(cutoff.confident)
+        self.assertEqual([s.snapshot_id for s in cutoff.sources], ["feb"])
+        for question, limit in (("What was the APY on March 4, 2025?", None),
+                                ("What was the APY at the end of March 2025?", None),
+                                ("What was the APY in April 2025?", None),
+                                ("What was the APY?", "2025-03-04")):
+            with self.subTest(question=question, cutoff=limit):
+                self.assertFalse(self.ask(question, limit).confident)
+
+    def test_bare_interval_keeps_changes_between_its_endpoints(self):
+        self.restore_january_rate_in_march()
+        for question in ("What was the APY between January and March 2025?",
+                         "What was the APY from 2025-01-01 to 2025-03-03?"):
+            with self.subTest(question=question):
+                reply = self.ask(question)
+                self.assertTrue(reply.confident)
+                self.assertEqual([s.snapshot_id for s in reply.sources], ["jan", "feb", "mar"])
+
+    def test_year_at_end_of_comparison_applies_to_both_months(self):
+        self.restore_january_rate_in_march()
+        reply = self.ask("How did the APY change from January to February 2025?", "2026-01-01")
+        self.assertTrue(reply.confident)
+        self.assertEqual([s.snapshot_id for s in reply.sources], ["jan", "feb"])
