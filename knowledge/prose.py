@@ -48,22 +48,22 @@ class Document:
                         published_on=self.published or None)
 
 
+def read_document(page: PageRecord):
+    path = urlsplit(page.url).path.lower().rstrip("/")
+    if "/tag/" in path or "/author/" in path:
+        return None
+    body = re.split(r"(?im)^#{1,4}\s+(?:Handpicked for You|Related (?:Posts|Articles)|You May Also Like)\s*$", page.markdown, maxsplit=1)[0]
+    archive = bool(re.search(r"(?:^|/)(?:news(?:room)?|blog|press|20\d\d)(?:/|$)", path))
+    # Unlike a footer copyright year, a publication dateline belongs to the article.
+    stamp = re.search(r"(?im)^(?:Published(?: on)?[ :]+)?(" + DATE.pattern + r")\s*$", body[:1000])
+    published = parsed_date(stamp[1]) if stamp else ""
+    return Document(page, body, path, published, archive)
+
+
 class Site:
     def __init__(self, view: Inventory):
-        docs = []
-        for page in sorted(view.pages, key=lambda p: p.url):
-            path = urlsplit(page.url).path.lower().rstrip("/")
-            if "/tag/" in path or "/author/" in path:
-                continue
-            body = re.split(r"(?im)^#{1,4}\s+(?:Handpicked for You|Related (?:Posts|Articles)|You May Also Like)\s*$", page.markdown, maxsplit=1)[0]
-            archive = bool(re.search(r"(?:^|/)(?:news(?:room)?|blog|press|20\d\d)(?:/|$)", path))
-            # Unlike a footer copyright year, a publication dateline belongs to the article.
-            stamp = re.search(r"(?im)^(?:Published(?: on)?[ :]+)?(" + DATE.pattern + r")\s*$", body[:1000])
-            published = parsed_date(stamp[1]) if stamp else ""
-            if published and published > view.taken_on:
-                continue
-            docs.append(Document(page, body, path, published, archive))
-        self.docs = tuple(docs)
+        docs = (read_document(page) for page in sorted(view.pages, key=lambda p: p.url))
+        self.docs = tuple(d for d in docs if d and d.published <= view.taken_on)
 
     def visible(self, on: str):
         return (d for d in self.docs if not d.published or d.published <= on)

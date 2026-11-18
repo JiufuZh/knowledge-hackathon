@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from typing import NamedTuple
+from urllib.parse import urlsplit
 
-from .prose import DATE, LINK, Document, blocks, cited, literal_link, narrative, parsed_date, plain, refuse
-from .schema import Reply
+from .prose import DATE, LINK, Document, blocks, cited, literal_link, narrative, parsed_date, plain, read_document, refuse
+from .schema import Claim, FactKey, Reply
 
 DAY = r"(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)"
-SCHEDULE = re.compile(r"^\s*(" + DAY + r"\b.*?(?:\d(?::\d\d)?\s*[ap]\.?m\.?|closed|noon|ATM only))\s*$", re.I)
+SCHEDULE = re.compile(r"^\s*(" + DAY + r"\b.*?(?:\d(?::\d\d)?\s*[ap]\.?m\.?|closed|noon|midnight|ATM only))\s*$", re.I)
 ADDRESS = re.compile(r"^\s*\d+[ \t][^\n]{2,110}?,\s*[^\d\n,]+,\s*[A-Za-z]{2},?\s+[0-9]{5}(?:-\d{4})?\s*$", re.M)
 BRANCH_GENERIC = set("""a all alternate alternatives am an and any are as at atm avenue available bank banking
 branch branches by can close closed closes closing closure credit current currently days date dates day did do does will
@@ -46,13 +48,49 @@ def _saturday_schedule(days):
     return re.sub(r"[^a-z0-9]+", " ", row.casefold())
 
 
-_WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+_DAY_NAMES = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+_WEEKDAYS = tuple(day[:3] for day in _DAY_NAMES)
+_RANGE = r"[-–—]|to|through|thru"
+_DAY_LIST = re.compile(r"^(" + DAY + r"(?:(?:\s*(?:" + _RANGE + r"|,|and|&|/)\s*)" + DAY + r")*)"
+                       r"(?:\s*:\s*|\s+)(.+)$", re.I)
+_CLOCK = r"(?:1[0-2]|0?[1-9])(?::[0-5]\d)?\s*[ap]\.?m\.?|noon|midnight"
+_HOURS = re.compile(r"(" + _CLOCK + r")\s*(?:" + _RANGE + r")\s*(" + _CLOCK + r")", re.I)
 
 
-def _covers_weekday(row, target_day):
-    # A weekday can fall inside a printed range (e.g. Monday–Friday).
-    days = [_WEEKDAYS.index(day.lower()[:3]) for day in re.findall(DAY + r"\b", row, re.I)]
-    return bool(days and min(days) <= target_day <= max(days))
+def _weekdays(row):
+    match = _DAY_LIST.match(row)
+    if not match:
+        return set()
+    days = set()
+    previous = None
+    for name in re.finditer(DAY + r"\b", match[1], re.I):
+        day = _WEEKDAYS.index(name[0][:3].lower())
+        if previous and re.fullmatch(_RANGE, match[1][previous.end():name.start()].strip(), re.I):
+            start = _WEEKDAYS.index(previous[0][:3].lower())
+            days.update((start + offset) % 7 for offset in range((day - start) % 7 + 1))
+        days.add(day)
+        previous = name
+    return days
+
+
+def _hours(row):
+    match = _DAY_LIST.match(row)
+    if not match:
+        return None
+    value = match[2].casefold()
+    if value in {"closed", "atm only"}:
+        return value
+    interval = _HOURS.fullmatch(value)
+    if not interval:
+        return None
+    times = []
+    for clock in interval.groups():
+        if clock in {"noon", "midnight"}:
+            times.append("12:00 PM" if clock == "noon" else "12:00 AM")
+        else:
+            hour, minute, period = re.fullmatch(r"(\d+)(?::(\d+))?\s*([ap])\.?m\.?", clock).groups()
+            times.append(f"{int(hour)}:{minute or '00'} {period.upper()}M")
+    return " to ".join(times)
 
 
 def directory(view, site, on, question, terms):
@@ -101,48 +139,102 @@ def directory(view, site, on, question, terms):
     return refuse()
 
 
+_LABELS = {
+    kind: re.compile(r"(?im)^[#* \t]*" + label + r"(?: hours)?[ :*\t]*(?=\r?$|" + DAY + r"\b)")
+    for kind, label in (("lobby", "lobby"), ("drive-up", r"drive[- ]?(?:up|through|thru)(?: window)?"))
+}
+
+
+def _read_schedules(doc, kind, terms=()):
+    for label in _LABELS[kind].finditer(doc.body):
+        days = []
+        for line in doc.body[label.end():].lstrip().splitlines():
+            if not line.strip():
+                continue
+            row = SCHEDULE.match(plain(line))
+            if not row:
+                break
+            days.append((row[1], line.strip()))
+        if not days:
+            continue
+        intro = doc.body[:label.start()]
+        headings = {}
+        for h in re.finditer(r"(?m)^(#{1,6})[ \t]+([^\r\n]+)", intro):
+            if any(label.fullmatch(h[0]) for label in _LABELS.values()):
+                continue
+            level = len(h[1])
+            headings = {n: heading for n, heading in headings.items() if n < level}
+            headings[level] = h
+        local = next((h for h in reversed(headings.values()) if re.search(r"branch|office|location", h[2], re.I)), None)
+        subject = local[2] if local and not doc.archive else doc.page.title + " " + intro[:1500]
+        if not has_name(terms, subject):
+            continue
+        city = re.search(r"(?m)^([A-Z][A-Z .'-]{2,40}),\s*[A-Z][A-Za-z. ]{1,24}[—–-]", intro) if doc.archive else None
+        name = local[2] if local else doc.page.title.split("|")[0].strip()
+        if city:
+            name = city[1].strip().title()
+        start = doc.body.find(days[0][1], label.end())
+        end = doc.body.find(days[-1][1], start) + len(days[-1][1])
+        quote_start = local.start() if local and not intro[local.end():].strip() else label.start()
+        yield Schedule(doc, name, tuple(r[0] for r in days), doc.body[quote_start:end].strip())
+
+
+def schedule_claims(page, template):
+    if template.source_class in {"news", "blog"} or not re.search(r"lobby|drive[- ]?(?:up|thru|through)", page.markdown, re.I):
+        return
+    doc = read_document(page)
+    if doc is None or doc.archive:
+        return
+    entity = (urlsplit(page.url).hostname or "").removeprefix("www.")
+    for kind in _LABELS:
+        for schedule in _read_schedules(doc, kind):
+            name = re.fullmatch(r"([\w.'&’ -]+?)\s+(?:branch|office|location)(?:\s+hours)?",
+                                plain(schedule.branch), re.I)
+            if not name or name[1].lower() in {"our", "your", "the", "nearest", "local"}:
+                continue
+            branch = name[1].strip().casefold() + " branch"
+            proof = replace(template, quote=schedule.quote, headings=(schedule.branch, kind),
+                            source_class="branch", published_on=doc.published or template.published_on)
+            for row in schedule.days:
+                hours = _hours(row)
+                if hours:
+                    for day in sorted(_weekdays(row)):
+                        key = FactKey(entity, branch, "", kind + " hours", (("weekday", _DAY_NAMES[day]),))
+                        yield Claim(key, hours, proof)
+
+
 def schedules(view, site, on, question, terms):
-    drive = bool(re.search(r"drive|drive[- ]?(?:up|thru|through)", question, re.I))
-    heading = r"drive[- ]?(?:up|through|thru)(?: window)?" if drive else "lobby"
-    label = re.compile(r"(?im)^[#* \t]*" + heading + r"(?: hours)?[ :*\t]*(?=\r?$|"+DAY+r"\b)")
-    options = []
-    for doc in site.visible(on):
-        for m in label.finditer(doc.body):
-            days = []
-            # Keep the heading with its lines. A drive-up row cannot fill a lobby gap.
-            for line in doc.body[m.end():].lstrip().splitlines():
-                if not line.strip():
-                    continue
-                row = SCHEDULE.match(plain(line))
-                if not row:
-                    break
-                days.append((row[1], line.strip()))
-            if not days:
-                continue
-            intro = doc.body[:m.start()]
-            # Directories can publish schedules for several named offices on one page.
-            prior_headings = re.findall(r"(?im)^#{1,5}\s+([^\n]*(?:branch|office|location)[^\n]*)$",intro)
-            local = prior_headings[-1] if prior_headings else ""
-            subject = local if local and not doc.archive else doc.page.title + " " + intro[:1500]
-            if not has_name(terms, subject):
-                continue
-            # Limit city extraction to the article dateline preceding this schedule.
-            city = re.search(r"(?m)^([A-Z][A-Z .'-]{2,40}),\s*[A-Z][A-Za-z. ]{1,24}[—–-]", intro)
-            name = city[1].strip().title() if city else local or doc.page.title.split("|")[0].strip()
-            start = doc.body.find(days[0][1], m.end())
-            end = doc.body.find(days[-1][1], start) + len(days[-1][1])
-            options.append(Schedule(doc, name, tuple(r[0] for r in days), doc.body[m.start():end].strip()))
+    drive = "drive" in question.lower()
+    kind = "drive-up" if drive else "lobby"
+    options = [row for doc in site.visible(on) for row in _read_schedules(doc, kind, terms)]
     if not options:
         return refuse("I couldn't verify published hours for that branch in this capture.")
     options.sort(key=lambda entry: (not entry.doc.archive, entry.doc.published, entry.branch), reverse=True)
     primary = options[0]
+    requested_day = re.search(r"\b(" + DAY + r")\b", question, re.I)
+    target_day = _WEEKDAYS.index(requested_day[1].lower()[:3]) if requested_day else None
     if terms:
         first = primary.doc
         peers = [entry for entry in options
                  if (entry.doc.archive, entry.doc.published) == (first.archive, first.published)]
-        if len({entry.days for entry in peers}) > 1:
-            return refuse("Published schedules differ for that location; please confirm its hours with the branch.",
-                          [entry.doc.evidence(view, entry.quote) for entry in peers[:2]])
+        seen = {}
+        for entry in peers:
+            for row in entry.days:
+                for day in _weekdays(row):
+                    if target_day is not None and day != target_day:
+                        continue
+                    value = _hours(row) or row
+                    previous = seen.get(day)
+                    if previous and previous[0] != value:
+                        return refuse("Published schedules differ for that location; please confirm its hours with the branch.",
+                                      [e.doc.evidence(view, e.quote) for e in (previous[1], entry)])
+                    seen.setdefault(day, (value, entry))
+        listed_days = {day for row in primary.days for day in _weekdays(row)}
+        if target_day in seen:
+            primary = seen[target_day][1]
+        elif target_day is None and seen.keys() - listed_days:
+            return refuse("The published schedules cover different days. Which weekday would you like?",
+                          [entry.doc.evidence(view, entry.quote) for entry in peers])
     # Distinct examples illustrate variation without treating a single release as universal.
     selected = [primary]
     if not terms:
@@ -153,12 +245,10 @@ def schedules(view, site, on, question, terms):
             def contrast(other):
                 return (_saturday_schedule(other.days) != primary_saturday, len(set(other.days) - primary_days))
             selected.append(max(different, key=contrast))
-    requested_day = re.search(r"\b(" + DAY + r")\b", question, re.I)
-    target_day = _WEEKDAYS.index(requested_day[1].lower()[:3]) if requested_day else None
     parts = []
     for doc, name, days, quote in selected:
         if target_day is not None:
-            days = tuple(row for row in days if _covers_weekday(row, target_day))
+            days = tuple(row for row in days if target_day in _weekdays(row))
             if not days:
                 return refuse("There is no published schedule for that day in this capture.")
         subject = f"{name}, announced {doc.published or view.taken_on}" if doc.archive else name

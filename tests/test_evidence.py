@@ -153,3 +153,39 @@ class EvidenceTests(unittest.TestCase):
         claims, spans = extract_page(page(body, "fee-schedule", "Fee Schedule"), "jan", "2025-01-01")
         self.assertEqual([(c.key.product, c.value) for c in claims], [("temporary checks", "$7.00 per item")])
         self.assertTrue(any(s.quote.startswith("We will charge") for s in spans))
+
+    def test_branch_schedule_disagreements_and_changes_use_only_matching_scope(self):
+        from knowledge.query import answer_member
+        from knowledge.resolve import discover_conflicts
+
+        alder = page("## Alder Branch\n**Lobby**\nMonday-Friday: 9 a.m.-5 p.m.\n"
+                     "**Drive-up**\nMonday-Friday: 7 a.m.-6 p.m.\n"
+                     "## Cedar Branch\n**Lobby**\nWednesday: 11 a.m.-4 p.m.",
+                     "offices", "Location directory")
+        peer = page("# Alder Branch\n**Lobby**\nWednesday: 10:00 AM to 5:00 PM\n"
+                    "Monday and Friday: 9:00 AM to 5:00 PM", "alder", "Alder Branch")
+        old = page("July 2, 2023\n# Alder Branch\n**Lobby**\nMonday-Friday: 6 a.m.-noon",
+                   "news/old", "Alder Branch")
+        h = History()
+        h.add(capture("2025-01-01", alder, peer, old))
+        reply = answer_member(h, "What are the Alder branch lobby hours on Wednesday?")
+        self.assertFalse(reply.confident)
+        self.assertTrue(answer_member(h, "What are the Alder branch lobby hours on Monday?").confident)
+        report, = discover_conflicts(h)
+        self.assertEqual(report.topic, "alder branch lobby hours wednesday")
+        self.assertIsNone(report.resolution)
+        self.assertEqual(set(report.values), {"9:00 AM to 5:00 PM", "10:00 AM to 5:00 PM"})
+        self.assertEqual({e.url for e in report.sources}, {alder.url, peer.url})
+        h.add(capture("2025-02-01", alder, old))
+        revised = page(alder.markdown.replace("9 a.m.-5 p.m.", "9 a.m.-4 p.m."),
+                       "offices", "Location directory")
+        h.add(capture("2025-03-01", revised, old))
+        changes = [c for c in discover_conflicts(h) if c.resolution is not None]
+        self.assertEqual({c.topic for c in changes}, {
+            "alder branch lobby hours " + day for day in ("monday", "tuesday", "wednesday", "thursday", "friday")
+        })
+        for change in changes:
+            self.assertEqual(change.resolution, "9:00 AM to 4:00 PM")
+            self.assertEqual([e.taken_on for e in change.sources], ["2025-02-01", "2025-03-01"])
+            for evidence, source in zip(change.sources, (alder, revised)):
+                self.assertIn(evidence.quote, source.markdown)

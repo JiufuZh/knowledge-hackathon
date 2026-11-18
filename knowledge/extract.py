@@ -7,9 +7,10 @@ from html import unescape
 import re
 from urllib.parse import urlsplit
 
+from .branches import schedule_claims
 from .schema import Bound, Claim, Evidence, FactKey, PageRecord
 
-PARSER_VERSION = 1
+PARSER_VERSION = 2
 NUMBER = r"\d[\d,]*(?:\.\d+)?"
 PERCENT = re.compile(r"(?<![\w.])\d+(?:\.\d+)?\s*%")
 CASH = re.compile(r"\$\s*" + NUMBER)
@@ -535,4 +536,8 @@ def extract_page(page: PageRecord, snapshot_id: str, taken_on: str) -> tuple[tup
         if not is_table_note and not match and before_table and len(text) <= 240 and member_condition(text):
             leading_condition = text
         i += 1
+    for claim in schedule_claims(page, template):
+        if not passages or claim.evidence is not passages[-1]:
+            passages.append(claim.evidence)
+        claims.append(claim)
     return tuple(claims), tuple(passages)
