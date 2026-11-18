@@ -1,6 +1,6 @@
 # Project logbook
 
-**Verified implementation slices:** 6/6. **Current step:** November 17 submission review. **Next:** resolve findings, verify the exported source and send the reviewed commit.
+**Verified implementation slices:** 6/6. **Current step:** submission candidate verified. **Next:** deliver the final documentation and tested source together.
 
 | Slice | Status | Evidence |
 | --- | --- | --- |
@@ -13,4 +13,4 @@
 
 **November 11, 2026.** Three agents built the ingestion, resolution and answer modules after architecture review. Dedicated code review, simplification and independent QA followed.
 
-**November 17, 2026.** Reopened the release for a fresh review against the organizer's contract. Verified the existing public revision and baseline tests. Updated the English documentation to describe the implemented data structures and search behavior.
+**November 17, 2026.** Completed the end-to-end review, committed the verified corrections and checked the English documentation against the code. The extracted implementation passed 67 tests. The unchanged organizer scorer measured 93.64% public weighted accuracy. [Release measurements](RESULTS.md)
