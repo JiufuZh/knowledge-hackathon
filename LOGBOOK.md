@@ -16,3 +16,5 @@
 **November 17, 2026.** Completed the end-to-end review, committed the verified corrections and checked the English documentation against the code. The extracted implementation passed 67 tests. The unchanged organizer scorer measured 93.64% public weighted accuracy. [Release measurements](RESULTS.md)
 
 The source ZIP for the submitted commit contained 30 Git-tracked files. A fresh extraction passed all 67 tests and reproduced the public score with zero execution errors or stale-value traps. Sent the ZIP, repository link and commit to the organizer’s assignment mailbox. Verified the recipient, commit, attachment name and byte count in the sent message.
+
+**November 18, 2026.** Resent the same ZIP, repository link and review commit from my personal Gmail account to the organizer. Gmail confirmed the send.
