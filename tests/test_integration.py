@@ -94,6 +94,41 @@ class MemberIntegrationTests(unittest.TestCase):
             self.assertFalse(reply.confident)
             self.assertFalse(reply.sources)
 
+    def test_rate_issuer_before_and_after_product_name(self):
+        history = History()
+        page = rates_page("https://cedarvalley.test/rates", "1.12%")
+        page = PageRecord(page.url, "Cedar Valley Federal Credit Union", page.markdown, page.fetched_at)
+        history.add(snapshot("2025-04-15", page))
+        for issuer, expected in (("Cedar Valley Federal Credit Union", True),
+                                 ("Maple Bank", False), ("Lake Valley Credit Union", False)):
+            for question in (f"What is the Share Savings APY at {issuer}?",
+                             f"What Share Savings APY does {issuer} offer?",
+                             f"What is {issuer}'s Share Savings APY?"):
+                with self.subTest(question=question):
+                    answer = answer_member(history, question)
+                    self.assertEqual(answer.confident, expected)
+                    self.assertEqual(bool(answer.sources), expected)
+        for question in ("What is the Share Savings APY at your credit union?",
+                         "What Share Savings APY does the credit union offer?",
+                         "What is the Share Savings account's APY?"):
+            with self.subTest(question=question):
+                self.assertTrue(answer_member(history, question).confident)
+
+    def test_institution_name_can_also_be_part_of_a_product(self):
+        page = rates_page("https://copper.test/rates", "1.12%")
+        copper = PageRecord(page.url, page.title, page.markdown.replace("Share Savings", "Copper Savings"),
+                            page.fetched_at)
+        other = rates_page("https://copper.test/other/rates", "3.89%")
+        history = History()
+        history.add(snapshot("2025-04-15", copper, other))
+        for question in ("What is the Copper Savings APY on $250?",
+                         "What rate does Copper Savings pay on $250?"):
+            reply = answer_member(history, question)
+            self.assertTrue(reply.confident)
+            self.assertIn("1.12%", reply.text)
+            self.assertNotIn("3.89%", reply.text)
+            self.assertEqual({s.url for s in reply.sources}, {copper.url})
+
     def test_postdated_release_cannot_supply_an_earlier_rate_or_conflict(self):
         history = History()
         future = PageRecord("https://river.test/news/spring", "Certificate news",

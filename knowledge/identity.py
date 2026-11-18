@@ -37,22 +37,38 @@ def routing_entries(text, organization_names):
     return tuple(out)
 
 
+# Question words and prepositions end a name, including in lower-case queries.
+_NAME_WORD = (r"(?!(?:a|an|the|your|my|our|their|this|that|what|which|how|where|is|are|was|"
+              r"do|does|did|can|could|will|would|at|from|for|of|by|with|on|to|and|or|than|apr|apy|rates?)\b)"
+              r"[a-z0-9][a-z0-9-]*")
+_INSTITUTION = re.compile(
+    rf"\b(?P<brand>{_NAME_WORD}(?:\s+{_NAME_WORD}){{0,5}}?)"
+    r"\s+(?:(?:community|federal)\s+)?(?:bank|credit union)\b", re.I)
+
+
 def other_institution(question, inventory):
-    """Check explicit possessive ownership on an institution or financial product."""
-    if not re.search(r"\b(?:APR|APY|rates?|yields?|routing|fees?)\b", question, re.I):
+    """Bind named providers and possessives to the institution in this capture."""
+    if not re.search(r"\b(?:APR|APY|rates?|yields?|routing|ABA|fees?)\b", question, re.I):
         return False
-    possessives = re.finditer(r"\b([a-z0-9-]+)(?:\s+(?:community |federal )?(?:bank|credit union))?['’]s\b",
-                              question, re.I)
+    providers = set()
+    for match in _INSTITUTION.finditer(question):
+        before, after = question[:match.start()], question[match.end():]
+        if (re.search(r"\b(?:at|from|for|of|by|with|does|did)\s+(?:the\s+)?$", before, re.I)
+                or re.match(r"['’]s\b|\s+(?:offer|pay|charge|publish|list)s?\b", after, re.I)):
+            providers.add(match["brand"].casefold())
+    possessives = re.finditer(r"\b([a-z0-9-]+)['’]s\b", question, re.I)
     common = {"what", "who", "it", "today", "yesterday", "tomorrow", "member", "account",
               "product", "card", "loan", "mortgage", "certificate", "branch", "bank",
               "union", "year", "month", "week", "checking", "saving", "savings", "customer"}
     names = {m[1].casefold() for m in possessives} - common
-    if not names:
+    if not (names or providers):
         return False
     for page in inventory.pages:
-        names.difference_update(organization_names(page.url, page.title))
-        if not names:
+        known = organization_names(page.url, page.title)
+        providers.difference_update(known)
+        names.difference_update(known)
+        if not (names or providers):
             return False
     # A named product can also own a measure ("Platinum Visa's APR").
     product_words = {word for c in inventory.claims for word in c.key.product.split()}
-    return bool(names - product_words)
+    return bool(providers or names - product_words)

@@ -257,10 +257,14 @@ def _answer_measure(inventory, q, effective_on, explicit_measure, *, allow_yield
         if not rate:
             return None
         products = {c.key.product for c in all_claims if c.key.measure != "fee"}
-        stripped = q
-        for entity in {c.key.entity.split(".")[0] for c in all_claims}:
-            stripped = re.sub(r"\b" + re.escape(entity) + r"(?:'s)?\b", " ", stripped)
-        selected = _product_match(stripped, products, family)
+        selected = _product_match(q, products, family)
+        if not selected:
+            # An issuer can qualify a general family ("River checking") or be
+            # part of the account's published name ("River Savings").
+            stripped = q
+            for entity in {c.key.entity.split(".")[0] for c in all_claims}:
+                stripped = re.sub(r"\b" + re.escape(entity) + r"(?:'s)?\b", " ", stripped)
+            selected = _product_match(stripped, products, family)
         if not selected:
             if family:
                 return Reply("I don't know. I could not confirm a published rate for that product.", confident=False)
