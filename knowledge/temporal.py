@@ -26,7 +26,7 @@ _TIMELINE = re.compile(r"\bover time\b|\btimeline\b|\bhistory\b|"
                        r"\bacross (?:the |all )?(?:captures|snapshots)\b", re.I)
 _DATE_RANGE = re.compile(rf"\b(?:between|from)\s+(?:\d{{4}}-\d{{2}}-\d{{2}}|{_MONTH_PATTERN})\b", re.I)
 _CAPTURE = r"(?:snapshots?|captures?|crawls?|downloads?)"
-_RELATIVE_CAPTURE = re.compile(rf"\b(?:original|first|initial|earliest|baseline|latest|newest|prior|"
+_RELATIVE_CAPTURE = re.compile(rf"\b(?:original|first|initial|earliest|baseline|latest|newest|current|prior|"
                                rf"previous|preceding|last(?: two| 2)?)\s+{_CAPTURE}\b|\bbaseline\b", re.I)
 _PREVIOUS = re.compile(rf"\b(?:previous|prior|preceding|last two|last 2|last)\s+(?:{_CAPTURE}|and|to)\b", re.I)
 _FIRST = re.compile(r"\b(?:first|earliest|original|initial|baseline)\b", re.I)
@@ -47,7 +47,7 @@ def _dates(question, cutoff, known_through, cover_interval):
         if match["iso"]:
             target = date.fromisoformat(match["iso"])
         else:
-            range_end = found and re.search(range_connector + "$", prefix, re.I)
+            range_end = (found or _RELATIVE_CAPTURE.search(prefix)) and re.search(range_connector + "$", prefix, re.I)
             if not (match["year"] or match["day"] or _TIME_INTENT.search(prefix) or range_end):
                 continue
             month = _MONTHS[match["month"].lower()]
@@ -57,7 +57,7 @@ def _dates(question, cutoff, known_through, cover_interval):
             if not match["year"] and following and following["year"]:
                 year = int(following["year"]) - (month > _MONTHS[following["month"].lower()])
             if month_only:
-                if before or (cover_interval and not found):
+                if before or (cover_interval and not found and not _RELATIVE_CAPTURE.search(prefix)):
                     day = 1
                 elif known_through[:7] == f"{year:04d}-{month:02d}" and not re.search(r"\bend of\s*$", prefix, re.I):
                     day = int(known_through[-2:])
@@ -68,8 +68,35 @@ def _dates(question, cutoff, known_through, cover_interval):
             target = date(year, month, day)
         if before:
             target -= timedelta(days=1)
-        found.append(target.isoformat())
+        found.append((match.start(), target.isoformat()))
     return found
+
+
+def _mixed_endpoints(question, dated, captures, observed):
+    """Bind a named capture and a written date in the order the member requests."""
+    if len(captures) != 1 or not observed:
+        return None
+    capture = captures[0]
+    position, day = dated
+    explicit_first = position < capture.start()
+    left, right = sorted((position, capture.start()))
+    if not re.search(r"\b(?:to|and|through|until|vs|versus|with|against)\b", question[left:right], re.I):
+        return None
+    label = capture[0].lower().split()[0]
+    if _FIRST.match(label):
+        reference = observed[0]
+    elif label in {"previous", "prior", "preceding"}:
+        # “Previous capture to February 1” refers to the capture preceding
+        # the February endpoint. At the end of a range, “previous” uses the cutoff.
+        eligible = observed if explicit_first else [stamp for stamp in observed if stamp <= day]
+        if len(eligible) < 2:
+            return None
+        reference = eligible[-2]
+    elif not re.search(r"\b(?:two|2)\b", capture[0], re.I):
+        reference = observed[-1]
+    else:
+        return None
+    return (day, reference) if explicit_first else (reference, day)
 
 
 def _effective_view(history, base, requested, cutoff):
@@ -104,9 +131,10 @@ def answer_dated(history, question, as_of, answer_view):
     try:
         cutoff = date.fromisoformat(as_of).isoformat() if as_of is not None else latest
         known_through = min(cutoff, latest)
-        dates = _dates(question, cutoff, known_through, bool(timeline))
-        if interval and not timeline and not change and len(dates) >= 2:
-            dates = _dates(question, cutoff, known_through, True)
+        mentions = _dates(question, cutoff, known_through, bool(timeline))
+        if interval and not timeline and not change and len(mentions) >= 2:
+            mentions = _dates(question, cutoff, known_through, True)
+        dates = [day for _, day in mentions]
     except (ValueError, TypeError, OverflowError):
         return Reply("I couldn't identify a valid date for that question.", confident=False)
 
@@ -139,12 +167,38 @@ def answer_dated(history, question, as_of, answer_view):
             result = replace(result, text=f"As recorded on {view.taken_on}: {result.text}")
         return result
 
-    if timeline or (interval and len(dates) >= 2 and not change):
-        start = dates[0] if dates else history.views[0].taken_on
-        end = dates[-1] if len(dates) > 1 else cutoff
-        if start > end:
-            return Reply("Please specify the earlier and later dates.", confident=False)
-        points = sorted({start, end, *(v.taken_on for v in history.views if start < v.taken_on < min(end, cutoff))})
+    captures = list(_RELATIVE_CAPTURE.finditer(question))
+    capture_range = captures and re.search(r"\b(?:between|from|since)\b", question, re.I)
+    timeline = timeline or (interval and len(dates) >= 2 and not change)
+    compare = capture_range or (change and (dates or captures or _UNDATED_CHANGE.search(question)))
+    if not (timeline or compare):
+        return endpoint(dates[-1] if dates else cutoff)
+
+    observed = sorted({v.taken_on for v in history.views if v.taken_on <= cutoff})
+    if len(dates) == 1 and captures:
+        endpoints = _mixed_endpoints(question, mentions[0], captures, observed)
+        if endpoints is None:
+            return Reply("Please specify the two dates or captures to compare.", confident=False)
+        start, finish = endpoints
+    elif dates:
+        start = dates[0]
+        finish = dates[-1] if len(dates) > 1 else cutoff
+    elif timeline and not captures:
+        start, finish = history.views[0].taken_on, cutoff
+    else:
+        if len(observed) < 2:
+            return Reply("I need two dated captures to compare the published values.", confident=False)
+        previous = _PREVIOUS.search(question) and not _FIRST.search(question)
+        start = observed[-2] if previous else observed[0]
+        finish = observed[-1]
+    if start > finish:
+        if re.search(r"\b(?:between|versus|vs)\b|\bcompar\w*\b.*\b(?:against|with)\b", question, re.I):
+            start, finish = finish, start
+        else:
+            return Reply("Please specify the earlier and later dates to compare.", confident=False)
+
+    if timeline:
+        points = sorted({start, finish, *(stamp for stamp in observed if start < stamp < finish)})
         observations = []
         last_state = None
         for point in points:
@@ -157,25 +211,11 @@ def answer_dated(history, question, as_of, answer_view):
                      tuple(dict.fromkeys(e for _, r in observations for e in r.sources)),
                      confident=all(r.confident for _, r in observations),
                      conflict_note="Dates identify observations. The exact effective day may fall between captures.")
-    capture_range = _RELATIVE_CAPTURE.search(question) and re.search(r"\b(?:between|from|since)\b", question, re.I)
-    if capture_range or (change and (dates or _RELATIVE_CAPTURE.search(question) or _UNDATED_CHANGE.search(question))):
-        if dates:
-            start = dates[0]
-            finish = dates[-1] if len(dates) > 1 else cutoff
-        else:
-            observed = sorted({v.taken_on for v in history.views if v.taken_on <= cutoff})
-            if len(observed) < 2:
-                return Reply("I need two dated captures to compare the published values.", confident=False)
-            previous = _PREVIOUS.search(question) and not _FIRST.search(question)
-            start = observed[-2] if previous else observed[0]
-            finish = observed[-1]
-        if start > finish:
-            return Reply("Please specify the earlier and later dates to compare.", confident=False)
-        first, last = endpoint(start), endpoint(finish)
-        sources = tuple(dict.fromkeys((*first.sources, *last.sources)))
-        if not (first.confident and last.confident):
-            return Reply(f"I can't establish both endpoints. {start}: {first.text} {finish}: {last.text}",
-                         sources, confident=False)
-        return Reply(f"{start}: {first.text} {finish}: {last.text}", sources,
-                     conflict_note="Each value is supported by the capture available at its endpoint.")
-    return endpoint(dates[-1] if dates else cutoff)
+
+    first, last = endpoint(start), endpoint(finish)
+    sources = tuple(dict.fromkeys((*first.sources, *last.sources)))
+    if not (first.confident and last.confident):
+        return Reply(f"I can't establish both endpoints. {start}: {first.text} {finish}: {last.text}",
+                     sources, confident=False)
+    return Reply(f"{start}: {first.text} {finish}: {last.text}", sources,
+                 conflict_note="Each value is supported by the capture available at its endpoint.")

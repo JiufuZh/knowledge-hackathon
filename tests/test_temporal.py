@@ -149,6 +149,27 @@ class TemporalTests(unittest.TestCase):
                 self.assertTrue(reply.confident)
                 self.assertEqual([s.snapshot_id for s in reply.sources], ["jan", "feb", "mar"])
 
+    def test_mixed_date_and_capture_endpoints_keep_their_positions(self):
+        self.restore_january_rate_in_march()
+        for question, cutoff, expected in (
+            ("How did the APY change from the first snapshot to February 1, 2025?", None, ["jan", "feb"]),
+            ("Compare the APY from February 1, 2025 to the latest capture.", None, ["feb", "mar"]),
+            ("Compare the APY from January 1, 2025 to the previous capture.", None, ["jan", "feb"]),
+            ("How did the APY change from the prior capture to February 1, 2025?", None, ["jan", "feb"]),
+            ("How did the APY change from January 1 to the newest capture?", "2025-02-20", ["jan", "feb"]),
+            ("Compare the APY between February 1 and the first capture.", None, ["jan", "feb"]),
+            ("Compare the APY in February 2025 with the first snapshot.", None, ["jan", "feb"]),
+            ("Show the APY history from the first snapshot to February.", None, ["jan", "feb"]),
+        ):
+            with self.subTest(question=question, cutoff=cutoff):
+                reply = self.ask(question, cutoff)
+                self.assertTrue(reply.confident)
+                self.assertEqual([s.snapshot_id for s in reply.sources], expected)
+        for question in ("Compare the last two snapshots to February 1.",
+                         "How did the APY change from March 3 to the first capture?"):
+            with self.subTest(question=question):
+                self.assertFalse(self.ask(question).confident)
+
     def test_year_at_end_of_comparison_applies_to_both_months(self):
         self.restore_january_rate_in_march()
         reply = self.ask("How did the APY change from January to February 2025?", "2026-01-01")
