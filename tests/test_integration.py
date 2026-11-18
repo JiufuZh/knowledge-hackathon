@@ -103,3 +103,27 @@ class MemberIntegrationTests(unittest.TestCase):
         reply = answer_member(history, "What is the 6-month certificate APY?")
         self.assertFalse(reply.confident)
         self.assertFalse(discover_conflicts(history))
+
+    def test_postdated_articles_need_a_capture_on_or_after_publication(self):
+        articles = (
+            (PageRecord("https://river.test/news/shuttle", "Shuttle transfer requirements",
+                        "March 15, 2025\nA shuttle transfer requires a boarding pass.", "2025-01-01"),
+             "What does a shuttle transfer require?", "boarding pass"),
+            (PageRecord("https://river.test/news/birch", "Birch branch closure",
+                        "March 15, 2025\nBirch branch will close March 31, 2025.", "2025-01-01"),
+             "When will the Birch branch close in March 2025?", "March 31, 2025"),
+        )
+        for article, question, expected in articles:
+            with self.subTest(article=article.title):
+                history = History()
+                history.add(snapshot("2025-01-01", article))
+                for cutoff in ("2025-01-01", "2025-04-01"):
+                    answer = answer_member(history, question, cutoff)
+                    self.assertFalse(answer.confident)
+                    self.assertFalse(answer.sources)
+                    self.assertNotIn(expected, answer.text)
+                history.add(snapshot("2025-03-15", article))
+                answer = answer_member(history, question, "2025-03-15")
+                self.assertTrue(answer.confident)
+                self.assertIn(expected, answer.text)
+                self.assertEqual({s.snapshot_id for s in answer.sources}, {"2025-03-15"})

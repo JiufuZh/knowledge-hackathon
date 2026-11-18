@@ -60,6 +60,8 @@ class Site:
             # Unlike a footer copyright year, a publication dateline belongs to the article.
             stamp = re.search(r"(?im)^(?:Published(?: on)?[ :]+)?(" + DATE.pattern + r")\s*$", body[:1000])
             published = parsed_date(stamp[1]) if stamp else ""
+            if published and published > view.taken_on:
+                continue
             docs.append(Document(page, body, path, published, archive))
         self.docs = tuple(docs)
 

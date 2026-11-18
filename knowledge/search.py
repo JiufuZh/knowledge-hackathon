@@ -49,6 +49,8 @@ class _Index:
         self.rows = []
         self.postings = defaultdict(list)
         for proof in passages:
+            if proof.published_on and proof.published_on > proof.taken_on:
+                continue
             line = proof.quote.strip()
             if not 18 <= len(line) <= 1800 or line.startswith(("#", "|", "![", "[![")):
                 continue
