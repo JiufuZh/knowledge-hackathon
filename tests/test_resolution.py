@@ -151,6 +151,26 @@ class ResolutionTests(unittest.TestCase):
         both = answer_rates(view, "What are the APY and dividend rate for Harbor Savings?", JAN)
         self.assertEqual(set(both.sources), {apy.evidence, dividend.evidence})
 
+    def test_interest_rate_and_apy_remain_distinct_on_deposits(self):
+        nominal = observed("2.43%", replace(KEY, measure="interest rate"))
+        apy = observed("2.46%")
+        view = inventory(nominal, apy)
+        for label in ("interest rate", "interest rates", "nominal rate"):
+            with self.subTest(label=label):
+                reply = answer_rates(view, f"What is the Harbor Savings {label}?", JAN)
+                self.assertTrue(reply.confident)
+                self.assertEqual(reply.sources, (nominal.evidence,))
+                self.assertIn("2.43% interest rate", reply.text)
+                self.assertNotIn(apy.value, reply.text)
+        both = answer_rates(view, "What are the interest rate and APY for Harbor Savings?", JAN)
+        self.assertEqual(set(both.sources), {nominal.evidence, apy.evidence})
+        yield_only = inventory(apy)
+        strict = answer_rates(yield_only, "Harbor Savings nominal interest rate, not APY?", JAN)
+        self.assertFalse(strict.confident)
+        broad = answer_rates(yield_only, "What are the Harbor Savings interest rates?", JAN)
+        self.assertTrue(broad.confident)
+        self.assertIn("2.46% APY", broad.text)
+
     def test_mortgage_amount_above_maximum_is_never_a_quoted_tier(self):
         key = FactKey("example.test", "mortgage", "personal", "interest rate", (("purpose", "purchase"),),
                       (Bound("amount", "dollars", None, 175000), Bound("term", "months", 360, 360)))

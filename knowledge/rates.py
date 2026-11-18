@@ -19,12 +19,14 @@ _NUMBER_WORDS = {
 }
 _WORD_NUMBER = re.compile(r"\b(" + "|".join(_NUMBER_WORDS) + r")(?:[- ](one|two|three|four|five|six|seven|eight|nine))?(?=[ -]+(?:month|mo\b|year|yr\b))")
 _RATE_MEASURES = {"apy", "apr", "interest rate", "dividend rate", "fee", "points", "minimum to open", "minimum to earn"}
+_DEPOSIT_FAMILIES = {"checking", "savings", "certificate", "ira", "money market"}
 _CASH = re.compile(r"(?:\$\s*(\d[\d,]*(?:\.\d+)?)(?:\s*(k|million|thousand)\b)?|"
                    r"\b(\d[\d,]*(?:\.\d+)?)\s*(k|million|thousand)?\s*(?:dollars?|usd)\b)")
 _EXPLAIN = re.compile(r"\b(?:disagree\w*|contradict\w*|conflict\w*)\b|\b(?:compare|different)\b.{0,45}\b(?:sources?|pages?|schedules?)\b")
 _MEASURE_TERMS = {
     "apy": r"annual percentage yield|apys?",
     "apr": r"annual percentage rate|aprs?",
+    "interest rate": r"(?:nominal(?: interest)?|interest|note) rates?",
     "dividend rate": r"dividends?(?: rates?)?",
 }
 
@@ -131,12 +133,6 @@ def _display_name(key):
 
 
 def _measure(q, family, available):
-    if re.search(r"\bapy\b|annual percentage yield", q):
-        return "apy"
-    if re.search(r"\bapr\b|annual percentage rate", q):
-        return "apr"
-    if re.search(r"\bdividends?\b", q):
-        return "dividend rate"
     if "minimum" in q or "minimum deposit" in q:
         if "open" in q:
             return "minimum to open"
@@ -144,7 +140,7 @@ def _measure(q, family, available):
             return "minimum to earn"
     if "points" in q:
         return "points"
-    if family in {"checking", "savings", "certificate", "ira", "money market"} and "apy" in available:
+    if family in _DEPOSIT_FAMILIES and "apy" in available:
         return "apy"
     return next((m for m in ("interest rate", "apr", "apy", "dividend rate") if m in available), "")
 
@@ -227,10 +223,15 @@ def _explain_values(decision):
 def answer_rates(inventory, question, effective_on):
     q = _normalize(question)
     terms = "|".join(_MEASURE_TERMS.values())
-    q = re.sub(r"\b(?:not|instead of|rather than)\s+(?:the\s+)?(?:" + terms + r")\b", "", q)
+    q, excluded = re.subn(r"\b(?:not|instead of|rather than)\s+(?:the\s+)?(?:" + terms + r")\b", "", q)
     measures = [name for name, terms in _MEASURE_TERMS.items() if re.search(r"\b(?:" + terms + r")\b", q)]
     if len(measures) <= 1:
-        return _answer_measure(inventory, q, effective_on, next(iter(measures), None))
+        # Broad requests for deposit "interest rates" can use a clearly labeled
+        # yield when the schedule has no nominal column. A precise request cannot.
+        allow_yield = (measures == ["interest rate"] and not excluded and
+                       re.search(r"\binterest rates\b", q) is not None and "nominal" not in q)
+        return _answer_measure(inventory, q, effective_on, next(iter(measures), None),
+                               allow_yield=allow_yield)
     replies = [_answer_measure(inventory, q, effective_on, measure) for measure in measures]
     if any(r is None for r in replies):
         return None
@@ -238,7 +239,7 @@ def answer_rates(inventory, question, effective_on):
                  all(r.confident for r in replies), " ".join(dict.fromkeys(r.conflict_note for r in replies if r.conflict_note)) or None)
 
 
-def _answer_measure(inventory, q, effective_on, explicit_measure):
+def _answer_measure(inventory, q, effective_on, explicit_measure, *, allow_yield=False):
     if re.search(r"\b(?:links?|url|website|where (?:can|do|should) i (?:find|see|view))\b", q):
         return None
     fee = bool(re.search(r"\b(fees?|cost|charge|price|how much)\b", q)) and not re.search(r"\b(rates?|apr|apy)\b", q)
@@ -267,7 +268,10 @@ def _answer_measure(inventory, q, effective_on, explicit_measure):
         candidates = [c for c in all_claims if c.key.product in selected]
         if family == "loan" and len(selected) > 1:
             return Reply("Which loan product do you mean? The published terms depend on the product.", confident=False)
-        metric = explicit_measure or _measure(q, family, {c.key.measure for c in candidates})
+        available = {c.key.measure for c in candidates}
+        metric = explicit_measure or _measure(q, family, available)
+        if allow_yield and family in _DEPOSIT_FAMILIES and metric not in available and "apy" in available:
+            metric = "apy"
     candidates = [c for c in candidates if c.key.measure == metric]
     if "nonmember" in q or "non-member" in q:
         candidates = [c for c in candidates if c.key.audience == "nonmember"]
