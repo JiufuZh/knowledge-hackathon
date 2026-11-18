@@ -104,6 +104,13 @@ def resolve(claims, requested_scope: FactKey, effective_on: str) -> Decision:
             axis in b_bounds and _covers(b_bounds[axis], lim) for axis, lim in a_bounds.items())
 
     pool = [b for b in pool if not any(narrower(a, b) for a in pool)]
+    # The temporal view admits later observations only for explicit backdated
+    # amendments. Among equally authoritative peers use the last such revision.
+    amendment_days = [c.evidence.taken_on for c in pool
+                      if c.evidence.taken_on > effective_on and c.evidence.effective_from]
+    if amendment_days:
+        last_amendment = max(amendment_days)
+        pool = [c for c in pool if c.evidence.taken_on == last_amendment]
     # Only an explicitly applicable effective date can supersede a peer
     # schedule. Fetching an older statement again does not make it current.
     latest_effective = max((c.evidence.effective_from or "" for c in pool), default="")

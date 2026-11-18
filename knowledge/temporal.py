@@ -74,23 +74,24 @@ def _dates(question, cutoff, known_through, cover_interval):
 
 def _effective_view(history, base, requested, cutoff):
     """Only an explicitly backdated correction can revise an earlier inventory."""
-    changes = {}
+    seen = set()
+    amendments = []
     for view in history.views:
-        if not base.taken_on < view.taken_on <= cutoff:
-            continue
-        candidates = {}
+        if view.taken_on > cutoff:
+            break
         for claim in view.claims:
             proof = claim.evidence
             if ((not proof.published_on or proof.published_on <= view.taken_on)
                     and proof.effective_from and proof.effective_from <= requested
                     and (not proof.effective_until or requested <= proof.effective_until)
                     and _CORRECTION.search(" ".join((*proof.headings, proof.quote, proof.title)))):
-                candidates.setdefault(claim.key, []).append(claim)
-        changes.update(candidates)
-    if not changes:
-        return base
-    retained = tuple(c for c in base.claims if c.key not in changes)
-    return replace(base, claims=retained + tuple(c for group in changes.values() for c in group))
+                # A new crawl of the same notice supplies no new amendment.
+                content = replace(proof, snapshot_id="", taken_on="", fetched_at="")
+                identity = (claim.key, claim.value, content)
+                if identity not in seen and view.taken_on > base.taken_on:
+                    amendments.append(claim)
+                seen.add(identity)
+    return replace(base, claims=base.claims + tuple(amendments)) if amendments else base
 
 
 def answer_dated(history, question, as_of, answer_view):

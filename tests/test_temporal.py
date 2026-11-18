@@ -1,7 +1,11 @@
 import unittest
 from dataclasses import replace
+from types import SimpleNamespace
 
-from knowledge.schema import Claim, Evidence, FactKey, Inventory, Reply
+from knowledge.evidence import History
+from knowledge.query import answer_member
+from knowledge.resolve import resolve
+from knowledge.schema import Claim, Evidence, FactKey, Inventory, PageRecord, Reply
 from knowledge.temporal import answer_dated
 
 
@@ -9,7 +13,7 @@ class DatedFixture:
     def __init__(self):
         key = FactKey("union", "savings", "personal", "apy")
         first = Evidence("jan", "2025-01-01", "https://example.test/rates", "Rates",
-                         "rate sheet", (), "The savings APY is 4%.")
+                         "rate_sheet", (), "The savings APY is 4%.")
         corrected = replace(first, snapshot_id="feb", taken_on="2025-02-01",
                             quote="Correction effective January 1: the savings APY is 5%.",
                             effective_from="2025-01-01")
@@ -23,7 +27,8 @@ class DatedFixture:
 def read_fixture(view, question, effective_on):
     if not view.claims:
         return Reply("No rate is listed.", confident=False)
-    row = view.claims[0]
+    decision = resolve(view.claims, view.claims[0].key, effective_on)
+    row = decision.winners[0]
     return Reply(row.value, (row.evidence,))
 
 
@@ -149,3 +154,32 @@ class TemporalTests(unittest.TestCase):
         reply = self.ask("How did the APY change from January to February 2025?", "2026-01-01")
         self.assertTrue(reply.confident)
         self.assertEqual([s.snapshot_id for s in reply.sources], ["jan", "feb"])
+
+    def test_retroactive_amendments_preserve_authority_and_first_publication(self):
+        history = History()
+        def schedule(path, title, apy):
+            body = (f"# {title}\n\nLantern Savings\n\n| Balance | APY |\n"
+                    f"| --- | --- |\n| $0 or more | {apy} |\n\nEffective January 1, 2025.")
+            return PageRecord("https://ember.test/" + path, title, body, "")
+
+        original = schedule("rates", "Savings rates", "4.23%")
+        news = schedule("newsroom/notice", "Corrected rates", "8.91%")
+        amendment = schedule("personal/rates", "Corrected rates", "4.67%")
+        revision = schedule("member/rates", "Amended rates", "4.82%")
+        for month, current in (("01", original), ("02", news), ("03", amendment),
+                               ("04", news), ("05", revision), ("06", amendment)):
+            day = f"2025-{month}-02"
+            history.add(SimpleNamespace(snapshot_id=month, taken_on=day, pages=[current]))
+        for cutoff, snapshot, expected in (("2025-01-20", "01", "4.23%"),
+                                          ("2025-02-20", "01", "4.23%"),
+                                          ("2025-03-20", "03", "4.67%"),
+                                          ("2025-04-20", "03", "4.67%"),
+                                          ("2025-05-20", "05", "4.82%"),
+                                          ("2025-06-02", "05", "4.82%")):
+            with self.subTest(cutoff=cutoff):
+                reply = answer_member(history, "What Lantern Savings APY was effective January 15, 2025?", cutoff)
+                self.assertTrue(reply.confident)
+                self.assertIn(expected, reply.text)
+                self.assertEqual({e.snapshot_id for e in reply.sources}, {snapshot})
+        posted = answer_member(history, "What Lantern Savings APY was posted January 15, 2025?", "2025-06-02")
+        self.assertEqual({e.snapshot_id for e in posted.sources}, {"01"})
