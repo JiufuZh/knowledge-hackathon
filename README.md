@@ -1,44 +1,30 @@
 # Knowledge Hackathon
 
-A credit union member asking about a rate needs the rate that applied to their product, balance and date. This offline Python system answers from dated website captures, shows the evidence and explains disagreements between sources.
+This Python system answers credit union questions from five dated website captures. Each answer can include the original URL, capture ID and supporting quote. When the sources disagree, the system can explain which value applies or identify what it cannot verify.
 
-The unchanged organizer scorer measured **93.64% weighted accuracy** across 40 practice questions, with zero execution errors and a 0.21-second p95 answer time. [Results and limitations](RESULTS.md)
+## Run
 
-## Run the solution
-
-Use Python 3.11. The submission lives at the repository root. From that root, run the original synthetic tests:
+Use Python 3.11. The repository root is the submission folder. The solution has no external dependencies or API keys. From the root, run the synthetic tests:
 
 ```shell
 python -m unittest discover -s tests -v
 ```
 
-Extract the organizer-provided outer ZIP to a different folder. From the participant folder containing `harness/`, replace the example path with the absolute path to this checkout:
+Extract the organizer's participant kit separately. From the folder containing `harness/`, run the official scorer with the absolute path to this repository or the extracted submission ZIP:
 
 ```shell
 python -X utf8 harness/run_eval.py --submission "/path/to/knowledge-hackathon" --eval eval/public_eval.jsonl
 ```
 
-The runner provides the contract types, unpacks the five captures on its first run, and writes detailed results locally. To check quotes against the original pages and compare answers in reverse question order, run the following from the solution checkout:
+The harness supplies the contract module, unpacks the captures and writes detailed results locally. Replace the submission path with `starter` to reproduce the baseline. To check each emitted quote and compare responses in reverse question order, run this from the submission folder:
 
 ```shell
 python -X utf8 tools/audit.py --kit "/path/to/hackathon-knowledge-kit-participant"
 ```
 
-## Project documents
+## Reviewer guide
 
-- [Solution design](DESIGN.md) covers the architecture, agent responsibilities and implementation loop.
-- [Implementation agreement](INTERFACES.md) defines the organizer's entry point and how the three modules exchange evidence.
-- [Acceptance cases](VALIDATION.md) describe the synthetic tests and the measurements needed for release.
-- [Architecture review](REVIEW.md) records the three reviewers' findings and their second-round decisions.
-- [Logbook](LOGBOOK.md) tracks verified progress and the next decision.
-- [Reviewer notes](NOTES.md) explain how the running system chooses current evidence and where its coverage is limited.
-
-## Reproduce the starter baseline
-
-From the participant folder, run the original starter under the same scorer:
-
-```shell
-python -X utf8 harness/run_eval.py --submission starter --eval eval/public_eval.jsonl
-```
-
-The organizer's scorer unpacks the five captures on first run. Keep the kit and the generated per-question results local because they contain website content. Our baseline on Python 3.11.9 scored 9.3% weighted accuracy across 40 public questions, with zero execution errors.
+- [Notes](NOTES.md) explain the evidence rules and tradeoffs.
+- [Results](RESULTS.md) give the public score, timings and known misses.
+- [Design](DESIGN.md) and [interfaces](INTERFACES.md) link behavior to the implementing modules.
+- [Validation](VALIDATION.md), [reviews](REVIEW.md) and the [logbook](LOGBOOK.md) record how the solution was checked.

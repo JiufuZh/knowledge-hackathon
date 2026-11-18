@@ -1,14 +1,16 @@
 # Project logbook
 
-**Verified slices:** 6/6. **Current:** release verified. **Blockers:** none. **Next:** the owner can give the organizer the repository URL and selected commit.
+**Verified implementation slices:** 6/6. **Current step:** November 17 submission review. **Next:** resolve findings, verify the exported source and send the reviewed commit.
 
-| ID | Goal | Status | Verification and evidence |
-| --- | --- | --- | --- |
-| S1 | Open a public repository and establish a starter baseline | 已完成 | Verified visibility and remote, five snapshots, 40 public questions, 9.3% weighted accuracy and zero errors. [Reproduction](README.md) |
-| S2 | Review and converge on the architecture | 已完成 | Three distinct models rechecked revisions and returned proceed. [Review record](REVIEW.md) and [design](DESIGN.md) |
-| S3 | Build dated inventories and extract qualified evidence | 已完成 | Verified all 285,954 stored source spans against their captures. [Ingestion checks](tests/test_evidence.py) |
-| S4 | Resolve comparable claims and report conflicts | 已完成 | Mutations, crossing tiers, competing sources, fee conditions and promotion eligibility. [Resolution cases](tests/test_resolution.py) |
-| S5 | Answer, cite and abstain | 已完成 | Member-facing regressions, seven paraphrases of one tier lookup and contrasting requests. [Member cases](tests/test_answers.py) and [integration](tests/test_integration.py) |
-| S6 | Integrate, measure and publish a reproducible solution | 已完成 | Clean checkout, 54 tests, 26 independent cases, 93.64% weighted accuracy and all dedicated review rechecks passed. [Evidence](RESULTS.md) |
+| Slice | Status | Evidence |
+| --- | --- | --- |
+| S1 · Repository and starter baseline | Complete | [Run instructions](README.md) and [measurements](RESULTS.md) |
+| S2 · Architecture review | Complete | [Review decisions](REVIEW.md) |
+| S3 · Dated inventories and extraction | Complete | [Evidence tests](tests/test_evidence.py) |
+| S4 · Qualified claims and conflicts | Complete | [Resolution tests](tests/test_resolution.py) |
+| S5 · Member answers and citations | Complete | [Answer tests](tests/test_answers.py) |
+| S6 · Integration and release checks | Complete | [Integration tests](tests/test_integration.py) and [results](RESULTS.md) |
 
-**2026-11-11.** The owner approved the reviewed framework. Three agents implemented the slices. Public accuracy progressed from 9.30% (starter) to 82.40%, 92.09% and 93.64%. A conflict audit found a promotional-tier collision and a fee-footnote false change. Independent code review and QA exposed attribution, historical timeline and eligibility errors. Fixes have reproducible cases.
+**November 11, 2026.** Three agents built the ingestion, resolution and answer modules after architecture review. Dedicated code review, simplification and independent QA followed.
+
+**November 17, 2026.** Reopened the release for a fresh review against the organizer's contract. Verified the existing public revision and baseline tests. Updated the English documentation to describe the implemented data structures and search behavior.
